@@ -1,0 +1,10 @@
+spring:
+  application:
+    name: mini-jrag
+
+jina:
+  api-key: ${api-key}
+  api-url: https://api.jina.ai/v1/embeddings
+
+elasticsearch:
+  uris: http://xx.xx.xx.xx:9200
