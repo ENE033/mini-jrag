@@ -2,8 +2,7 @@ package org.ene.minijrag.controller;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.ene.minijrag.client.ElasticsearchClient;
-import org.ene.minijrag.req.PdfReq;
+import org.ene.minijrag.req.FileReq;
 import org.ene.minijrag.req.SearchReq;
 import org.ene.minijrag.resp.VectorDocumentResp;
 import org.ene.minijrag.service.DocumentService;
@@ -22,29 +21,29 @@ public class DocumentController {
     private final DocumentService documentService;
 
     /**
-     * Interface 1: Process PDF file
+     * Interface 1: Process file
      *
-     * @param request Request containing PDF URL and knowledge base name
+     * @param request Request containing file URL and knowledge base name
      * @return Operation result
      */
     @PostMapping("/process")
-    public Mono<ResponseEntity<String>> processPdf(@RequestBody PdfReq request) {
-        String pdfUrl = request.getPdfUrl();
+    public Mono<ResponseEntity<String>> processFile(@RequestBody FileReq request) {
+        String fileUrl = request.getFileUrl();
         String knowledgeBaseName = request.getKnowledgeBaseName();
 
-        log.info("Received request to process PDF file, URL: {}, knowledge base: {}", pdfUrl, knowledgeBaseName);
+        log.info("Received request to process file, URL: {}, knowledge base: {}", fileUrl, knowledgeBaseName);
 
-        return documentService.processPdf(pdfUrl, knowledgeBaseName)
+        return documentService.processFile(fileUrl, knowledgeBaseName)
                 .map(success -> {
                     if (success) {
-                        return ResponseEntity.ok("PDF file processed successfully");
+                        return ResponseEntity.ok("File processed successfully");
                     } else {
-                        return ResponseEntity.status(500).body("PDF file processing failed");
+                        return ResponseEntity.status(500).body("File processing failed");
                     }
                 })
                 .onErrorResume(error -> {
-                    log.error("Error occurred while processing PDF file", error);
-                    return Mono.just(ResponseEntity.status(500).body("Error occurred while processing PDF file: " + error.getMessage()));
+                    log.error("Error occurred while processing File", error);
+                    return Mono.just(ResponseEntity.status(500).body("Error occurred while processing File: " + error.getMessage()));
                 });
     }
 

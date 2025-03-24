@@ -1,4 +1,4 @@
-package org.ene.minijrag.component.splitter;
+package org.ene.minijrag.component.splitter.inc;
 
 import java.util.List;
 

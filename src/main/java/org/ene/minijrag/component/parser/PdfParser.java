@@ -5,8 +5,9 @@ import net.sourceforge.tess4j.ITesseract;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.rendering.PDFRenderer;
 import org.apache.pdfbox.text.PDFTextStripper;
+import org.ene.minijrag.component.parser.inc.FileParser;
 import org.ene.minijrag.component.parser.ocr.TesseractManager;
-import org.ene.minijrag.util.DownloadUtil;
+import org.ene.minijrag.util.FileTypeUtil;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StopWatch;
 import reactor.core.publisher.Flux;
@@ -25,7 +26,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
 @Component
-public class PdfParser {
+public class PdfParser implements FileParser {
 
     // Thread pool configuration
     private static final int CORE_POOL_SIZE = Runtime.getRuntime().availableProcessors() / 2;
@@ -56,15 +57,14 @@ public class PdfParser {
     // Create Reactor scheduler from existing ExecutorService
     private static final Scheduler customScheduler = Schedulers.fromExecutorService(EXECUTOR);
 
-    /**
-     * Download and parse PDF file
-     *
-     * @param pdfUrl URL of the PDF file
-     * @return Mono<String> containing PDF content
-     */
-    public Mono<String> downloadAndParsePdf(String pdfUrl) {
-        return DownloadUtil.download(pdfUrl)
-                .flatMap(this::parsePdfContent); // Parse PDF content
+    @Override
+    public Mono<String> parse(byte[] fileBytes) {
+        return parsePdfContent(fileBytes);
+    }
+
+    @Override
+    public boolean supports(FileTypeUtil.FileType fileType) {
+        return fileType == FileTypeUtil.FileType.PDF;
     }
 
     /**
@@ -73,7 +73,7 @@ public class PdfParser {
      * @param pdfBytes Byte array of PDF file
      * @return Mono<String> containing PDF content
      */
-    private Mono<String> parsePdfContent(byte[] pdfBytes) {
+    public Mono<String> parsePdfContent(byte[] pdfBytes) {
         try {
             InputStream inputStream = new ByteArrayInputStream(pdfBytes);
             PDDocument document = PDDocument.load(inputStream);

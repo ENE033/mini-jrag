@@ -1,5 +1,6 @@
 package org.ene.minijrag.component.splitter;
 
+import org.ene.minijrag.component.splitter.inc.TextSplitter;
 import org.ene.minijrag.util.TikTokenUtil;
 
 import java.util.ArrayList;

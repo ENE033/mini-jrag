@@ -1,7 +1,7 @@
 package org.ene.minijrag.component.splitter;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
+import org.ene.minijrag.component.splitter.inc.TextSplitter;
 
 import java.util.ArrayList;
 import java.util.List;

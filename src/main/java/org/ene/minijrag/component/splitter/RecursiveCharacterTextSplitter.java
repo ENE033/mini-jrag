@@ -3,6 +3,7 @@ package org.ene.minijrag.component.splitter;
 import lombok.Builder;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import org.ene.minijrag.component.splitter.inc.TextSplitter;
 
 import java.util.ArrayList;
 import java.util.Arrays;

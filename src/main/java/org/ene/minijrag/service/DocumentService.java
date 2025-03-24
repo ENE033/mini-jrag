@@ -6,11 +6,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.tika.io.FilenameUtils;
 import org.ene.minijrag.client.ElasticsearchClient;
 import org.ene.minijrag.client.JinaClient;
+import org.ene.minijrag.component.parser.FileParserDecorator;
 import org.ene.minijrag.component.splitter.TextSplitterFactory;
 import org.ene.minijrag.req.VectorDocumentReq;
 import org.ene.minijrag.resp.JinaEmbeddingResp;
 import org.ene.minijrag.resp.VectorDocumentResp;
-import org.ene.minijrag.component.parser.PdfParser;
+import org.ene.minijrag.util.DownloadUtil;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
@@ -22,7 +23,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class DocumentService {
 
-    private final PdfParser pdfParser;
+    private final FileParserDecorator fileParserDecorator;
     private final ElasticsearchClient elasticsearchVectorService;
     private final JinaClient jinaClient;
 
@@ -30,21 +31,22 @@ public class DocumentService {
     private static final int OVERLAP_SIZE = 50; // Number of overlapping characters between text chunks
 
     /**
-     * Interface 1: Process PDF file, parse, chunk, vectorize and store in vector database
+     * Interface 1: Process file, parse, chunk, vectorize and store in vector database
      *
-     * @param pdfUrl            URL of the PDF file
+     * @param fileUrl           URL of the file
      * @param knowledgeBaseName Knowledge base name
      * @return Mono<Boolean> indicating whether the operation was successful
      */
-    public Mono<Boolean> processPdf(String pdfUrl, String knowledgeBaseName) {
+    public Mono<Boolean> processFile(String fileUrl, String knowledgeBaseName) {
         // Dynamically generate index name
         String indexName = knowledgeBaseName + "_index";
 
-        return pdfParser.downloadAndParsePdf(pdfUrl)
+        return DownloadUtil.download(fileUrl)
+                .flatMap(fileParserDecorator::parseFile)
                 .flatMap(parsedText -> {
                     // Chunk text
                     List<String> chunks = TextSplitterFactory.createTokenSplitter().split(parsedText, CHUNK_SIZE, OVERLAP_SIZE);
-                    log.info("PDF text chunking completed, generated {} chunks", chunks.size());
+                    log.info("File text chunking completed, generated {} chunks", chunks.size());
 
                     // Call JinaClient for batch vectorization
                     return jinaClient.getEmbeddings(chunks)
@@ -67,7 +69,7 @@ public class DocumentService {
                                     VectorDocumentReq document = new VectorDocumentReq();
                                     document.setContent(chunk);
                                     document.setVector(vector);
-                                    document.setFileName(FilenameUtils.getName(pdfUrl)); // Set file name
+                                    document.setFileName(FilenameUtils.getName(fileUrl)); // Set file name
 
                                     // Store in vector database
                                     Mono<Boolean> storeOperation = elasticsearchVectorService.storeVectorDocument(indexName, document);
@@ -77,8 +79,8 @@ public class DocumentService {
                                 // Wait for all storage operations to complete
                                 return Mono.when(storeOperations)
                                         .then(Mono.just(true))
-                                        .doOnSuccess(success -> log.info("PDF processing completed, all chunks stored in vector database"))
-                                        .doOnError(error -> log.error("PDF processing failed", error));
+                                        .doOnSuccess(success -> log.info("File processing completed, all chunks stored in vector database"))
+                                        .doOnError(error -> log.error("File processing failed", error));
                             });
                 });
     }

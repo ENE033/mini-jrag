@@ -1,20 +1,25 @@
 package org.ene.minijrag;
 
+import org.ene.minijrag.component.parser.DocParser;
+import org.ene.minijrag.component.parser.FileParserDecorator;
 import org.ene.minijrag.component.parser.PdfParser;
-import org.ene.minijrag.component.splitter.RecursiveCharacterTextSplitter;
-import org.ene.minijrag.component.splitter.TextSplitter;
+import org.ene.minijrag.component.parser.inc.FileParser;
+import org.ene.minijrag.component.splitter.inc.TextSplitter;
 import org.ene.minijrag.component.splitter.TextSplitterFactory;
 import org.ene.minijrag.util.*;
 import reactor.core.publisher.Mono;
 
+import java.util.Arrays;
 import java.util.List;
 
 public class TextChunkerTest {
     public static void main(String[] args) {
         Character character = '�';
 
-        PdfParser pdfParser = new PdfParser();
-        Mono<String> stringMono = pdfParser.downloadAndParsePdf("xxx");
+        List<FileParser> list = Arrays.asList(new DocParser(), new PdfParser());
+        FileParserDecorator fileParserDecorator = new FileParserDecorator(list);
+        Mono<String> stringMono = DownloadUtil.download("xxxx")
+                .flatMap(fileParserDecorator::parseFile);
         String block = stringMono.block();
 
         // 1. Using Character Splitter

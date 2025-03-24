@@ -1,5 +1,7 @@
 package org.ene.minijrag.component.splitter;
 
+import org.ene.minijrag.component.splitter.inc.TextSplitter;
+
 import java.util.Arrays;
 import java.util.List;
 import java.util.function.Function;
