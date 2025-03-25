@@ -24,7 +24,7 @@ import java.util.List;
 public class DocumentService {
 
     private final FileParserDecorator fileParserDecorator;
-    private final ElasticsearchClient elasticsearchVectorService;
+    private final ElasticsearchClient elasticsearchClient;
     private final JinaClient jinaClient;
 
     private static final int CHUNK_SIZE = 500; // Maximum number of characters per text chunk
@@ -59,8 +59,10 @@ public class DocumentService {
                                     return Mono.error(new RuntimeException("Number of vectorization results does not match number of chunks"));
                                 }
 
-                                // Build vector documents and store in vector database
-                                List<Mono<Boolean>> storeOperations = new ArrayList<>();
+                                // Build vector document list
+                                List<VectorDocumentReq> documents = new ArrayList<>(chunks.size());
+                                String fileName = FilenameUtils.getName(fileUrl);
+
                                 for (int i = 0; i < chunks.size(); i++) {
                                     String chunk = chunks.get(i);
                                     List<Float> vector = embeddingDataList.get(i).getEmbedding();
@@ -69,16 +71,14 @@ public class DocumentService {
                                     VectorDocumentReq document = new VectorDocumentReq();
                                     document.setContent(chunk);
                                     document.setVector(vector);
-                                    document.setFileName(FilenameUtils.getName(fileUrl)); // Set file name
+                                    document.setFileName(fileName);
 
-                                    // Store in vector database
-                                    Mono<Boolean> storeOperation = elasticsearchVectorService.storeVectorDocument(indexName, document);
-                                    storeOperations.add(storeOperation);
+                                    // Add to bulk list
+                                    documents.add(document);
                                 }
 
-                                // Wait for all storage operations to complete
-                                return Mono.when(storeOperations)
-                                        .then(Mono.just(true))
+                                // Bulk store to vector database
+                                return elasticsearchClient.storeBulkVectorDocuments(indexName, documents)
                                         .doOnSuccess(success -> log.info("File processing completed, all chunks stored in vector database"))
                                         .doOnError(error -> log.error("File processing failed", error));
                             });
@@ -110,11 +110,11 @@ public class DocumentService {
                     // Define filter condition
                     ObjectNode filter = null;
                     if (fileNames != null && !fileNames.isEmpty()) {
-                        filter = elasticsearchVectorService.buildFileNameFilter(fileNames);
+                        filter = elasticsearchClient.buildFileNameFilter(fileNames);
                     }
 
                     // Query most similar chunks in vector database
-                    return elasticsearchVectorService.searchSimilarVectors(indexName, queryVector, topK, numCandidates, filter, null)
+                    return elasticsearchClient.searchSimilarVectors(indexName, queryVector, topK, numCandidates, filter, null)
                             .doOnSuccess(results -> log.info("Search completed, found {} similar chunks", results.size()))
                             .doOnError(error -> log.error("Search failed", error));
                 });
@@ -142,7 +142,7 @@ public class DocumentService {
                     }
 
                     // Query most similar chunks across multiple knowledge bases
-                    return elasticsearchVectorService.searchAcrossKnowledgeBases(indexNames, queryVector, topK)
+                    return elasticsearchClient.searchAcrossKnowledgeBases(indexNames, queryVector, topK)
                             .doOnSuccess(results -> log.info("Cross-knowledge base search completed, found {} similar chunks", results.size()))
                             .doOnError(error -> log.error("Cross-knowledge base search failed", error));
                 });

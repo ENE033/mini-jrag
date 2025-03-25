@@ -1,5 +1,6 @@
 package org.ene.minijrag.client;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -151,6 +152,63 @@ public class ElasticsearchClient {
                     return Mono.just(false);
                 });
     }
+
+    /**
+     * Store multiple vector documents in bulk to specified index
+     *
+     * @param indexName Index name
+     * @param documents List of documents containing vectors
+     * @return Whether bulk storage was successful
+     */
+    public Mono<Boolean> storeBulkVectorDocuments(String indexName, List<VectorDocumentReq> documents) {
+        if (documents == null || documents.isEmpty()) {
+            return Mono.just(true); // 没有文档需要存储
+        }
+
+        // 构建批量请求
+        StringBuilder bulkRequestBody = new StringBuilder();
+
+        for (VectorDocumentReq document : documents) {
+            // 添加索引行
+            String id = document.getId();
+            bulkRequestBody.append("{\"index\":{\"_index\":\"").append(indexName).append("\"");
+            if (id != null && !id.isEmpty()) {
+                bulkRequestBody.append(",\"_id\":\"").append(id).append("\"");
+            }
+            bulkRequestBody.append("}}\n");
+
+            // 添加文档行
+            try {
+                String docJson = objectMapper.writeValueAsString(document);
+                bulkRequestBody.append(docJson).append("\n");
+            } catch (JsonProcessingException e) {
+                log.error("Error serializing document: {}", e.getMessage());
+                // 继续处理其他文档
+            }
+        }
+
+        log.debug("Sending bulk request with {} documents", documents.size());
+
+        return webClient.post()
+                .uri("/_bulk")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(bulkRequestBody.toString())
+                .retrieve()
+                .bodyToMono(String.class)
+                .map(response -> {
+                    // 可以解析响应以获取详细的成功/失败信息
+                    log.info("Bulk operation complete. Stored {} documents to index {}", documents.size(), indexName);
+                    return true;
+                })
+                .onErrorResume(e -> {
+                    log.error("Failed to bulk store documents to index {}: {}", indexName, e.getMessage());
+                    if (e instanceof WebClientResponseException wcre) {
+                        log.error("Response Body: {}", wcre.getResponseBodyAsString());
+                    }
+                    return Mono.just(false);
+                });
+    }
+
 
     /**
      * Search documents in specified index based on vector similarity
