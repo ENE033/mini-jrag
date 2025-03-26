@@ -10,4 +10,5 @@ public class SearchReq {
     private String knowledgeBaseName;
     private List<String> fileNames;
     private List<String> knowledgeBaseNames;
+    private Float similarity;
 }

@@ -59,11 +59,12 @@ public class DocumentController {
         int topK = request.getTopK() != null ? request.getTopK() : 5;
         String knowledgeBaseName = request.getKnowledgeBaseName();
         List<String> fileNames = request.getFileNames();
+        Float similarity = request.getSimilarity();
 
         log.info("Received search request, text: {}, topK: {}, knowledge base: {}, file names: {}",
                 searchText, topK, knowledgeBaseName, fileNames);
 
-        return documentService.searchSimilarChunks(searchText, topK, knowledgeBaseName, fileNames)
+        return documentService.searchSimilarChunks(searchText, topK, knowledgeBaseName, fileNames, similarity)
                 .map(ResponseEntity::ok)
                 .onErrorResume(error -> {
                     log.error("Error occurred during search", error);

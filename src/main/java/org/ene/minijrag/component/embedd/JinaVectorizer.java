@@ -1,7 +1,8 @@
-package org.ene.minijrag.client;
+package org.ene.minijrag.component.embedd;
 
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import org.ene.minijrag.component.embedd.inc.TextVectorizer;
 import org.ene.minijrag.req.JinaEmbeddingReq;
 import org.ene.minijrag.resp.JinaEmbeddingResp;
 import org.springframework.beans.factory.annotation.Value;
@@ -17,10 +18,11 @@ import reactor.util.retry.Retry;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Component
-public class JinaClient {
+public class JinaVectorizer implements TextVectorizer {
 
     /**
      * Jina API key
@@ -67,30 +69,30 @@ public class JinaClient {
                 .build();
 
         this.webClient = WebClient.builder()
-                .baseUrl(apiUrl) // apiUrl has been injected by now
+                .baseUrl(apiUrl)
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
-                .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey) // Set API key
+                .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey)
                 .exchangeStrategies(strategies)
                 .build();
     }
 
     /**
-     * Get text embedding vector
+     * Get raw embedding response for a single text
      *
      * @param text Text to be vectorized
-     * @return Response containing embedding vector
+     * @return Full API response
      */
-    public Mono<JinaEmbeddingResp> getEmbedding(String text) {
-        return getEmbeddings(Collections.singletonList(text));
+    public Mono<JinaEmbeddingResp> getEmbeddingResponse(String text) {
+        return getEmbeddingsResponse(Collections.singletonList(text));
     }
 
     /**
-     * Batch get text embedding vectors
+     * Get raw embedding response for multiple texts
      *
      * @param texts List of texts to be vectorized
-     * @return Response containing embedding vectors
+     * @return Full API response
      */
-    public Mono<JinaEmbeddingResp> getEmbeddings(List<String> texts) {
+    public Mono<JinaEmbeddingResp> getEmbeddingsResponse(List<String> texts) {
         JinaEmbeddingReq request = JinaEmbeddingReq.builder()
                 .model(DEFAULT_MODEL)
                 .task(DEFAULT_TASK)
@@ -100,16 +102,16 @@ public class JinaClient {
                 .input(texts)
                 .build();
 
-        return getEmbeddings(request);
+        return getEmbeddingsResponse(request);
     }
 
     /**
      * Get embedding vectors using custom request parameters
      *
      * @param request Custom request parameters
-     * @return Response containing embedding vectors
+     * @return Full API response
      */
-    public Mono<JinaEmbeddingResp> getEmbeddings(JinaEmbeddingReq request) {
+    public Mono<JinaEmbeddingResp> getEmbeddingsResponse(JinaEmbeddingReq request) {
         return webClient.post()
                 .bodyValue(request)
                 .retrieve()
@@ -129,5 +131,33 @@ public class JinaClient {
                 )
                 .doOnError(e -> log.error("Failed to get embeddings from Jina API", e))
                 .doOnSuccess(response -> log.debug("Successfully got embeddings from Jina API"));
+    }
+
+    /**
+     * Implementation of TextVectorizer interface method
+     * Get embedding vector for a single text
+     *
+     * @param text Text to be vectorized
+     * @return List of float values representing the embedding vector
+     */
+    @Override
+    public Mono<List<Float>> getEmbedding(String text) {
+        return getEmbeddingResponse(text)
+                .map(resp -> resp.getData().getFirst().getEmbedding());
+    }
+
+    /**
+     * Implementation of TextVectorizer interface method
+     * Get embedding vectors for multiple texts
+     *
+     * @param texts List of texts to be vectorized
+     * @return List of embedding vectors
+     */
+    @Override
+    public Mono<List<List<Float>>> getEmbedding(List<String> texts) {
+        return getEmbeddingsResponse(texts)
+                .map(resp -> resp.getData().stream()
+                        .map(JinaEmbeddingResp.EmbeddingData::getEmbedding)
+                        .collect(Collectors.toList()));
     }
 }

@@ -1,34 +1,65 @@
 package org.ene.minijrag.service;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.tika.io.FilenameUtils;
 import org.ene.minijrag.client.ElasticsearchClient;
-import org.ene.minijrag.client.JinaClient;
+import org.ene.minijrag.component.embedd.inc.TextVectorizer;
 import org.ene.minijrag.component.parser.FileParserDecorator;
 import org.ene.minijrag.component.splitter.TextSplitterFactory;
 import org.ene.minijrag.req.VectorDocumentReq;
-import org.ene.minijrag.resp.JinaEmbeddingResp;
 import org.ene.minijrag.resp.VectorDocumentResp;
 import org.ene.minijrag.util.DownloadUtil;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
+import jakarta.annotation.PostConstruct;
 import java.util.ArrayList;
 import java.util.List;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class DocumentService {
 
-    private final FileParserDecorator fileParserDecorator;
-    private final ElasticsearchClient elasticsearchClient;
-    private final JinaClient jinaClient;
+    @Autowired
+    private FileParserDecorator fileParserDecorator;
+
+    @Autowired
+    private ElasticsearchClient elasticsearchClient;
+
+    @Autowired
+    @Qualifier("jinaVectorizer")
+    private TextVectorizer jinaClient;
+
+    @Autowired
+    @Qualifier("ollamaVectorizer")
+    private TextVectorizer ollamaClient;
+
+    @Value("${embedding.type:Jina}")
+    private String embeddingType;
+
+    private TextVectorizer textVectorizer;
 
     private static final int CHUNK_SIZE = 500; // Maximum number of characters per text chunk
     private static final int OVERLAP_SIZE = 50; // Number of overlapping characters between text chunks
+
+    @PostConstruct
+    public void init() {
+        // Select TextVectorizer implementation based on configuration
+        if ("Ollama".equalsIgnoreCase(embeddingType)) {
+            this.textVectorizer = ollamaClient;
+            log.info("Using Ollama for text vectorization");
+        } else if ("Jina".equalsIgnoreCase(embeddingType)) {
+            this.textVectorizer = jinaClient;
+            log.info("Using Jina for text vectorization");
+        } else {
+            log.warn("Invalid embedding.type: '{}'. Defaulting to Jina.", embeddingType);
+            this.textVectorizer = jinaClient;
+        }
+    }
 
     /**
      * Interface 1: Process file, parse, chunk, vectorize and store in vector database
@@ -48,13 +79,10 @@ public class DocumentService {
                     List<String> chunks = TextSplitterFactory.createTokenSplitter().split(parsedText, CHUNK_SIZE, OVERLAP_SIZE);
                     log.info("File text chunking completed, generated {} chunks", chunks.size());
 
-                    // Call JinaClient for batch vectorization
-                    return jinaClient.getEmbeddings(chunks)
-                            .flatMap(response -> {
-                                // Parse JinaEmbeddingResp
-                                List<JinaEmbeddingResp.EmbeddingData> embeddingDataList = response.getData();
-
-                                if (embeddingDataList.size() != chunks.size()) {
+                    // Call TextVectorizer for batch vectorization
+                    return textVectorizer.getEmbedding(chunks)
+                            .flatMap(embeddings -> {
+                                if (embeddings.size() != chunks.size()) {
                                     log.error("Number of vectorization results does not match number of chunks");
                                     return Mono.error(new RuntimeException("Number of vectorization results does not match number of chunks"));
                                 }
@@ -65,7 +93,7 @@ public class DocumentService {
 
                                 for (int i = 0; i < chunks.size(); i++) {
                                     String chunk = chunks.get(i);
-                                    List<Float> vector = embeddingDataList.get(i).getEmbedding();
+                                    List<Float> vector = embeddings.get(i);
 
                                     // Build vector document
                                     VectorDocumentReq document = new VectorDocumentReq();
@@ -94,13 +122,10 @@ public class DocumentService {
      * @param fileNames         List of file names (optional)
      * @return Mono<List < VectorDocumentResp>> List of similar chunks
      */
-    public Mono<List<VectorDocumentResp>> searchSimilarChunks(String searchText, int topK, String knowledgeBaseName, List<String> fileNames) {
-        // Call JinaClient for vectorization
-        return jinaClient.getEmbedding(searchText)
-                .flatMap(response -> {
-                    // Parse JinaEmbeddingResp, get query vector
-                    List<Float> queryVector = response.getData().getFirst().getEmbedding();
-
+    public Mono<List<VectorDocumentResp>> searchSimilarChunks(String searchText, int topK, String knowledgeBaseName, List<String> fileNames, Float similarity) {
+        // Call TextVectorizer for vectorization
+        return textVectorizer.getEmbedding(searchText)
+                .flatMap(queryVector -> {
                     // Dynamically generate index name
                     String indexName = knowledgeBaseName != null ? knowledgeBaseName + "_index" : "_all";
 
@@ -114,7 +139,7 @@ public class DocumentService {
                     }
 
                     // Query most similar chunks in vector database
-                    return elasticsearchClient.searchSimilarVectors(indexName, queryVector, topK, numCandidates, filter, null)
+                    return elasticsearchClient.searchSimilarVectors(indexName, queryVector, topK, numCandidates, filter, similarity)
                             .doOnSuccess(results -> log.info("Search completed, found {} similar chunks", results.size()))
                             .doOnError(error -> log.error("Search failed", error));
                 });
@@ -129,12 +154,9 @@ public class DocumentService {
      * @return Mono<List < VectorDocumentResp>> List of similar chunks
      */
     public Mono<List<VectorDocumentResp>> searchAcrossKnowledgeBases(String searchText, int topK, List<String> knowledgeBaseNames) {
-        // Call JinaClient for vectorization
-        return jinaClient.getEmbedding(searchText)
-                .flatMap(response -> {
-                    // Parse JinaEmbeddingResp, get query vector
-                    List<Float> queryVector = response.getData().getFirst().getEmbedding();
-
+        // Call TextVectorizer for vectorization
+        return textVectorizer.getEmbedding(searchText)
+                .flatMap(queryVector -> {
                     // Dynamically generate list of index names
                     List<String> indexNames = new ArrayList<>();
                     for (String knowledgeBaseName : knowledgeBaseNames) {

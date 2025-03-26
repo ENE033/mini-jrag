@@ -18,10 +18,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 @Slf4j
 @Service
@@ -122,6 +119,9 @@ public class ElasticsearchClient {
     public Mono<Boolean> storeVectorDocument(String indexName, VectorDocumentReq document) {
         // Process document ID
         String documentId = document.getId();
+
+        indexName = indexName.toLowerCase();
+
         String endpoint = "/" + indexName + "/_doc";
         if (documentId != null && !documentId.isEmpty()) {
             endpoint += "/" + documentId;
@@ -134,6 +134,7 @@ public class ElasticsearchClient {
             log.error("Error serializing document: {}", ex.getMessage());
         }
 
+        String finalIndexName = indexName;
         return webClient.post()
                 .uri(endpoint)
                 .contentType(MediaType.APPLICATION_JSON)
@@ -141,11 +142,11 @@ public class ElasticsearchClient {
                 .retrieve()
                 .bodyToMono(String.class)
                 .map(body -> {
-                    log.info("Successfully stored document to index {}: {}", indexName, body);
+                    log.info("Successfully stored document to index {}: {}", finalIndexName, body);
                     return true;
                 })
                 .onErrorResume(e -> {
-                    log.error("Failed to store document to index {}: {}", indexName, e.getMessage());
+                    log.error("Failed to store document to index {}: {}", finalIndexName, e.getMessage());
                     if (e instanceof WebClientResponseException wcre) {
                         log.error("Response Body: {}", wcre.getResponseBodyAsString());
                     }
@@ -162,14 +163,16 @@ public class ElasticsearchClient {
      */
     public Mono<Boolean> storeBulkVectorDocuments(String indexName, List<VectorDocumentReq> documents) {
         if (documents == null || documents.isEmpty()) {
-            return Mono.just(true); // 没有文档需要存储
+            return Mono.just(true); // No documents to store
         }
 
-        // 构建批量请求
+        indexName = indexName.toLowerCase();
+
+        // Build bulk request
         StringBuilder bulkRequestBody = new StringBuilder();
 
         for (VectorDocumentReq document : documents) {
-            // 添加索引行
+            // Add index action line
             String id = document.getId();
             bulkRequestBody.append("{\"index\":{\"_index\":\"").append(indexName).append("\"");
             if (id != null && !id.isEmpty()) {
@@ -177,38 +180,63 @@ public class ElasticsearchClient {
             }
             bulkRequestBody.append("}}\n");
 
-            // 添加文档行
+            // Add document line
             try {
                 String docJson = objectMapper.writeValueAsString(document);
                 bulkRequestBody.append(docJson).append("\n");
             } catch (JsonProcessingException e) {
                 log.error("Error serializing document: {}", e.getMessage());
-                // 继续处理其他文档
+                // Continue processing other documents
             }
         }
 
         log.debug("Sending bulk request with {} documents", documents.size());
 
+        String finalIndexName = indexName;
         return webClient.post()
                 .uri("/_bulk")
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(bulkRequestBody.toString())
                 .retrieve()
-                .bodyToMono(String.class)
+                .bodyToMono(JsonNode.class)
                 .map(response -> {
-                    // 可以解析响应以获取详细的成功/失败信息
-                    log.info("Bulk operation complete. Stored {} documents to index {}", documents.size(), indexName);
-                    return true;
+                    // Parse bulk response correctly
+                    boolean hasErrors = response.has("errors") && response.get("errors").asBoolean();
+
+                    if (hasErrors) {
+                        log.error("Bulk operation has errors: {}", response);
+                        // Count successful operations
+                        int successCount = 0;
+                        JsonNode items = response.get("items");
+                        if (items != null && items.isArray()) {
+                            for (JsonNode item : items) {
+                                JsonNode indexResponse = item.get("index");
+                                if (indexResponse != null &&
+                                        indexResponse.has("status") &&
+                                        (indexResponse.get("status").asInt() >= 200 &&
+                                                indexResponse.get("status").asInt() < 300)) {
+                                    successCount++;
+                                }
+                            }
+                        }
+                        log.info("Bulk operation partially completed. Successfully stored {}/{} documents to index {}",
+                                successCount, documents.size(), finalIndexName);
+                        return successCount == documents.size();
+                    } else {
+                        log.info("Bulk operation completed. Successfully stored all {} documents to index {}",
+                                documents.size(), finalIndexName);
+                        return true;
+                    }
                 })
                 .onErrorResume(e -> {
-                    log.error("Failed to bulk store documents to index {}: {}", indexName, e.getMessage());
+                    log.error("Failed to bulk store documents to index {}: {}", finalIndexName, e.getMessage());
                     if (e instanceof WebClientResponseException wcre) {
-                        log.error("Response Body: {}", wcre.getResponseBodyAsString());
+                        log.error("Response status: {}", wcre.getStatusCode());
+                        log.error("Response body: {}", wcre.getResponseBodyAsString());
                     }
                     return Mono.just(false);
                 });
     }
-
 
     /**
      * Search documents in specified index based on vector similarity
@@ -224,6 +252,9 @@ public class ElasticsearchClient {
     public Mono<List<VectorDocumentResp>> searchSimilarVectors(String indexName, List<Float> queryVector, int limit,
                                                                Integer numCandidates, ObjectNode filter, Float similarity) {
         try {
+
+            indexName = indexName.toLowerCase();
+
             // Build request body using KNN query
             ObjectNode requestBody = objectMapper.createObjectNode();
 
@@ -256,6 +287,7 @@ public class ElasticsearchClient {
             requestBody.set("query", queryNode);
             requestBody.put("size", limit);
 
+            String finalIndexName = indexName;
             return webClient.post()
                     .uri("/" + indexName + "/_search")
                     .contentType(MediaType.APPLICATION_JSON)
@@ -280,7 +312,7 @@ public class ElasticsearchClient {
                         return results;
                     })
                     .onErrorResume(e -> {
-                        log.error("Vector search failed in index {}: {}", indexName, e.getMessage());
+                        log.error("Vector search failed in index {}: {}", finalIndexName, e.getMessage());
                         return Mono.just(new ArrayList<>());
                     });
         } catch (Exception e) {

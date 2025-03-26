@@ -6,5 +6,11 @@ jina:
   api-key: ${api-key}
   api-url: https://api.jina.ai/v1/embeddings
 
+ollama:
+  api-url: http://localhost:11434
+
+embedding:
+  type: Ollama
+
 elasticsearch:
   uris: http://xx.xx.xx.xx:9200
