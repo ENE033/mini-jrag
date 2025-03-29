@@ -11,6 +11,7 @@ public class VectorDocumentResp {
     private String id;
     private String content;
     private String fileName;
+    private int chunkOrder;
 //    private List<Float> vector;
     private Map<String, Object> metadata;
 }

@@ -1,21 +1,21 @@
 package org.ene.minijrag.controller;
 
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.ene.minijrag.component.chat.OllamaChatClient;
-import org.ene.minijrag.resp.VectorDocumentResp;
-import org.ene.minijrag.service.DocumentService;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-import reactor.core.publisher.Mono;
-
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.ene.minijrag.component.chat.OllamaChatClient;
+import org.ene.minijrag.service.DocumentService;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+import reactor.core.publisher.Mono;
 
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 @Slf4j
 @RestController
@@ -79,58 +79,55 @@ public class ChatController {
             log.info("Searching knowledge base: {} for relevant chunks with searchText: {}", knowledgeBaseName, searchText);
 
             // Call searchSimilarChunks to retrieve relevant knowledge
-            return documentService.searchSimilarChunks(searchText, 20, knowledgeBaseName, null, 0.5f)
+            return documentService.searchSimilarChunks(searchText, 5, knowledgeBaseName, null, 0.5f)
                     .flatMap(similarChunks -> {
                         if (!similarChunks.isEmpty()) {
-                            // Combine retrieved chunks into a single string
-                            String retrievedKnowledge = similarChunks.stream()
-                                    .map(VectorDocumentResp::getContent)
-                                    .collect(Collectors.joining("\n"));
+                            log.info("Retrieved {} chunks from knowledge base: {}", similarChunks.size(), knowledgeBaseName);
 
-                            log.info("Retrieved knowledge from knowledge base: {}", retrievedKnowledge);
+                            // Log each chunk's details
+                            similarChunks.forEach(chunk -> {
+                                log.info("Chunk ID: {}, FileName: {}, ChunkOrder: {},Content: {}", chunk.getId(), chunk.getFileName(), chunk.getChunkOrder(), chunk.getContent());
+                            });
 
-                            // Add retrieved knowledge to system message
-                            Map<String, Object> systemMessage = messages.stream()
-                                    .filter(message -> "system".equals(message.get("role")))
-                                    .findFirst()
-                                    .orElse(null);
-
-                            if (systemMessage != null) {
-                                String originalContent = (String) systemMessage.get("content");
-                                systemMessage.put("content", originalContent + "\n\n### Retrieved Knowledge:\n" + retrievedKnowledge);
-                            } else {
-                                // If no system message exists, create one
-                                messages.add(0, Map.of(
+                            // Add each chunk as a separate system message
+                            similarChunks.forEach(chunk -> {
+                                messages.add(Map.of(
                                         "role", "system",
-                                        "content", "You are a helpful AI assistant that provides concise and accurate information.\n\n### Retrieved Knowledge:\n" + retrievedKnowledge
+                                        "content", "### Retrieved Knowledge:\n" + chunk.getContent()
                                 ));
-                            }
+                            });
                         } else {
                             log.info("No relevant chunks found in knowledge base: {}", knowledgeBaseName);
                         }
 
                         // Call the chat API with the updated messages
-                        return ollamaChatClient.chat(model, messages, options, stream, format, tools, keepAlive)
-                                .map(ResponseEntity::ok)
-                                .onErrorResume(error -> {
-                                    log.error("Error occurred during advanced chat", error);
-                                    ObjectNode errorResponse = objectMapper.createObjectNode();
-                                    errorResponse.put("error", true);
-                                    errorResponse.put("message", error.getMessage());
-                                    return Mono.just(ResponseEntity.internalServerError().body(errorResponse));
-                                });
+                        return callChatApi(model, messages, options, stream, format, tools, keepAlive);
                     });
         } else {
             // If no knowledgeBaseName is provided, directly call the chat API
-            return ollamaChatClient.chat(model, messages, options, stream, format, tools, keepAlive)
-                    .map(ResponseEntity::ok)
-                    .onErrorResume(error -> {
-                        log.error("Error occurred during advanced chat", error);
-                        ObjectNode errorResponse = objectMapper.createObjectNode();
-                        errorResponse.put("error", true);
-                        errorResponse.put("message", error.getMessage());
-                        return Mono.just(ResponseEntity.internalServerError().body(errorResponse));
-                    });
+            return callChatApi(model, messages, options, stream, format, tools, keepAlive);
         }
     }
+
+    /**
+     * Helper method to call the chat API
+     */
+    private Mono<ResponseEntity<JsonNode>> callChatApi(String model,
+                                                       List<Map<String, Object>> messages,
+                                                       Map<String, Object> options,
+                                                       Boolean stream,
+                                                       String format,
+                                                       List<Map<String, Object>> tools,
+                                                       String keepAlive) {
+        return ollamaChatClient.chat(model, messages, options, stream, format, tools, keepAlive)
+                .map(ResponseEntity::ok)
+                .onErrorResume(error -> {
+                    log.error("Error occurred during advanced chat", error);
+                    ObjectNode errorResponse = objectMapper.createObjectNode();
+                    errorResponse.put("error", true);
+                    errorResponse.put("message", error.getMessage());
+                    return Mono.just(ResponseEntity.internalServerError().body(errorResponse));
+                });
+    }
+
 }
