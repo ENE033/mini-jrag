@@ -100,6 +100,7 @@ public class DocumentService {
                                     document.setContent(chunk);
                                     document.setVector(vector);
                                     document.setFileName(fileName);
+                                    document.setChunkOrder(i); // Set chunk order
 
                                     // Add to bulk list
                                     documents.add(document);
@@ -112,6 +113,7 @@ public class DocumentService {
                             });
                 });
     }
+
 
     /**
      * Interface 2: Perform vector query based on search text, return the most similar chunks

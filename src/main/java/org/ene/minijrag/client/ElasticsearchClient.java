@@ -86,6 +86,11 @@ public class ElasticsearchClient {
         metadataField.put("type", "object");
         properties.put("metadata", metadataField);
 
+        // Chunk order field
+        Map<String, Object> chunkOrderField = new HashMap<>();
+        chunkOrderField.put("type", "integer");
+        properties.put("chunkOrder", chunkOrderField);
+
         // Assemble mappings
         Map<String, Object> mappings = new HashMap<>();
         mappings.put("properties", properties);
@@ -108,6 +113,7 @@ public class ElasticsearchClient {
                     return Mono.just(false);
                 });
     }
+
 
     /**
      * Store vector document to specified index
@@ -286,6 +292,13 @@ public class ElasticsearchClient {
             queryNode.set("knn", knnNode);
             requestBody.set("query", queryNode);
             requestBody.put("size", limit);
+
+            // Add sorting by chunkOrder
+            ArrayNode sortArray = objectMapper.createArrayNode();
+            ObjectNode sortField = objectMapper.createObjectNode();
+            sortField.put("chunkOrder", "asc");
+            sortArray.add(sortField);
+            requestBody.set("sort", sortArray);
 
             String finalIndexName = indexName;
             return webClient.post()
