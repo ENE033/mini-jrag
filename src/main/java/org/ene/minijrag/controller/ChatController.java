@@ -119,7 +119,7 @@ public class ChatController {
                                                        String format,
                                                        List<Map<String, Object>> tools,
                                                        String keepAlive) {
-        return ollamaChatClient.chat(model, messages, options, stream, format, tools, keepAlive)
+        return ollamaChatClient.chat(model, messages, options, stream, format, tools, keepAlive, 0)
                 .map(ResponseEntity::ok)
                 .onErrorResume(error -> {
                     log.error("Error occurred during advanced chat", error);
