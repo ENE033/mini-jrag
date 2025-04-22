@@ -16,15 +16,15 @@ public class EmbeddingTest {
         ConfigurableApplicationContext context = SpringApplication.run(App.class, args);
         OllamaVectorizer ollamaVectorizer = context.getBean(OllamaVectorizer.class);
         List<String> list = Arrays.asList("I love you ", "你好啊");
-        Mono<List<OllamaEmbeddingResp>> embeddings = ollamaVectorizer.getEmbeddingsResponse(list);
-        embeddings.subscribe(resp -> {
-            ObjectMapper objectMapper = new ObjectMapper();
-            try {
-                String s = objectMapper.writeValueAsString(resp);
-                System.out.println(s);
-            } catch (JsonProcessingException e) {
-                throw new RuntimeException(e);
-            }
-        });
+//        Mono<List<OllamaEmbeddingResp>> embeddings = ollamaVectorizer.getEmbeddingsResponse(list);
+//        embeddings.subscribe(resp -> {
+//            ObjectMapper objectMapper = new ObjectMapper();
+//            try {
+//                String s = objectMapper.writeValueAsString(resp);
+//                System.out.println(s);
+//            } catch (JsonProcessingException e) {
+//                throw new RuntimeException(e);
+//            }
+//        });
     }
 }

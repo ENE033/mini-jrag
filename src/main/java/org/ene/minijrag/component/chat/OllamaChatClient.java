@@ -256,21 +256,13 @@ public class OllamaChatClient {
             }
         }
 
-        // Add assistant message with the tool calls
-        List<Map<String, Object>> updatedMessages = new ArrayList<>(messages);
-        updatedMessages.add(Map.of(
-                "role", "assistant",
-                "content", "", // Empty content when there are tool calls
-                "tool_calls", objectMapper.convertValue(toolCalls, List.class)
-        ));
-
         // Combine all function results and continue the conversation
         return Flux.fromIterable(functionResults)
                 .flatMap(mono -> mono)
                 .collectList()
                 .flatMap(results -> {
-                    updatedMessages.addAll(results);
-                    return chat(model, updatedMessages, options, stream, format, null, keepAlive, depth + 1);
+                    messages.addAll(results);
+                    return chat(model, messages, options, stream, format, null, keepAlive, depth + 1);
                 });
     }
 
